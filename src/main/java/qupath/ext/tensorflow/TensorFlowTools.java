@@ -34,12 +34,16 @@ import java.util.Arrays;
 import java.util.List;
 import java.util.stream.Stream;
 
+import org.bytedeco.javacpp.Loader;
 import org.bytedeco.opencv.global.opencv_core;
 import org.bytedeco.opencv.opencv_core.Mat;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.tensorflow.DeviceSpec;
+import org.tensorflow.EagerSession;
 import org.tensorflow.Tensor;
 import org.tensorflow.TensorFlow;
+import org.tensorflow.DeviceSpec.DeviceType;
 import org.tensorflow.ndarray.FloatNdArray;
 import org.tensorflow.ndarray.NdArrays;
 import org.tensorflow.ndarray.Shape;
@@ -47,6 +51,7 @@ import org.tensorflow.ndarray.buffer.DataBuffers;
 import org.tensorflow.ndarray.buffer.FloatDataBuffer;
 import org.tensorflow.ndarray.index.Index;
 import org.tensorflow.ndarray.index.Indices;
+import org.tensorflow.op.Ops;
 import org.tensorflow.types.TFloat32;
 import org.tensorflow.types.TFloat64;
 import org.tensorflow.types.TInt32;
@@ -119,6 +124,41 @@ public class TensorFlowTools {
 	    	return TUint8.tensorOf(shape, DataBuffers.of(buffer));
 	    }
 	    throw new IllegalArgumentException("Unsupported Mat depth! Must be 8U, 32S, 32F or 64F.");
+	}
+	
+	
+	/**
+	 * Hack-y method to try to load cuda via javacpp. Not for real use.
+	 * @return
+	 */
+	static boolean initialize() {
+		
+		try {
+			var output = Loader.load(
+					Class.forName("org.bytedeco.cuda.global.curand"),
+					Class.forName("org.bytedeco.cuda.global.cusparse"),
+					Class.forName("org.bytedeco.cuda.global.cusolver"),
+					Class.forName("org.bytedeco.cuda.global.cudnn")
+					);
+			for (var o : output)
+				System.err.println("Loading " + o);
+		} catch (ClassNotFoundException e) {
+			logger.warn("CUDA not available through JavaCPP");
+			logger.debug(e.getLocalizedMessage(), e);
+			return false;
+		} catch (Throwable t) {
+			logger.warn("Error loading cudnn: " + t.getLocalizedMessage(), t);
+			return false;
+		}
+		
+		var session = EagerSession.getDefault();
+		var ops = Ops.create(session);
+		ops = ops.withDevice(DeviceSpec.newBuilder().deviceType(DeviceType.GPU).build());
+		var x = ops.constant(5.0f);
+		var y = ops.constant(10.0f);
+		var output = ops.math.mul(x, y);
+		logger.debug("Initialization output: {} (expected 50)", output.asTensor().getFloat());
+		return true;
 	}
 	
 	
